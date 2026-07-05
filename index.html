@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>施工図CDE - 突合ビュー</title>
+<script src="https://cdn.jsdelivr.net/npm/openseadragon@4.1.0/build/openseadragon/openseadragon.min.js"></script>
+<script src="./config.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #1a1c20; color: #e6e6e6; }
+  header { padding: 10px 16px; background: #24272e; border-bottom: 1px solid #333; display: flex; gap: 12px; align-items: center; }
+  header b { color: #6fd08c; }
+  #stage { display: flex; height: calc(100vh - 112px); }
+  #viewer { flex: 1; background: #2b2e35; position: relative; }
+  #panel { width: 300px; background: #21242b; border-left: 1px solid #333; display: flex; flex-direction: column; }
+  #panel h3 { margin: 0; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
+  #mklist { overflow-y: auto; flex: 1; }
+  .mkrow { padding: 10px 14px; border-bottom: 1px solid #2d3038; font-size: 13px; cursor: pointer; }
+  .mkrow:hover { background: #2a2e37; }
+  .mkrow .top { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .mkrow .body { color: #cdd3dc; }
+  .chip { font-size: 11px; padding: 2px 7px; border-radius: 10px; color: #fff; cursor: pointer; user-select: none; }
+  .chip.s0 { background: #e0483d; } .chip.s1 { background: #d98a2b; } .chip.s2 { background: #2f9e5b; }
+  .num { width: 20px; height: 20px; border-radius: 50%; background: #444; color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+  .del { margin-left: auto; color: #888; }
+  .del:hover { color: #e0483d; }
+  .bar { padding: 8px 16px; background: #24272e; border-top: 1px solid #333; display: flex; gap: 16px; align-items: center; font-size: 14px; flex-wrap: wrap; }
+  .bar label { display: flex; gap: 8px; align-items: center; }
+  input[type=range] { width: 180px; }
+  .tag { background: #0a5; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+  button { background: #3a3f4b; color: #e6e6e6; border: 1px solid #555; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #474d5b; }
+  button.active { background: #0a5; border-color: #0a5; color: #fff; }
+  #hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(10,90,60,.95); color: #fff; padding: 8px 16px; border-radius: 8px; font-size: 14px; display: none; z-index: 20; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+  .mk { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; color: #fff; font-weight: bold; font-size: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  .mk.base { background: #e0483d; } .mk.ov { background: #2f7fe0; }
+  .pin { width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.5); cursor: pointer; }
+  .pin span { transform: rotate(45deg); display: block; text-align: center; line-height: 22px; color: #fff; font-size: 12px; font-weight: bold; }
+  .pin.s0 { background: #e0483d; } .pin.s1 { background: #d98a2b; } .pin.s2 { background: #2f9e5b; }
+  #status { color: #9aa; font-size: 12px; }
+  .badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; color: #fff; }
+  .badge.v0 { background: #6b7280; } .badge.v1 { background: #d98a2b; } .badge.v2 { background: #2f9e5b; }
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 100; }
+  #modal.open { display: flex; }
+  .card { background: #24272e; border: 1px solid #3a3f4b; border-radius: 12px; width: 460px; max-width: 92vw; padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+  .card h2 { margin: 0 0 4px; font-size: 17px; }
+  .card .sub { color: #9aa; font-size: 13px; margin-bottom: 14px; }
+  .rolepick { display: flex; gap: 8px; margin-bottom: 16px; }
+  .rolepick button { flex: 1; }
+  .step { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid #333; border-radius: 8px; margin-bottom: 8px; }
+  .step.cur { border-color: #0a5; background: #1e2a24; }
+  .step .dot { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; background: #444; color: #fff; flex-shrink: 0; }
+  .step.ok .dot { background: #2f9e5b; } .step.ng .dot { background: #e0483d; }
+  .step .role { font-size: 14px; } .step .meta { font-size: 12px; color: #9aa; margin-top: 2px; }
+  .step .acts { margin-left: auto; display: flex; gap: 6px; }
+  .modal-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+  .ok-banner { background: #1e3a2a; border: 1px solid #2f9e5b; color: #8fe0ab; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; }
+  .btn-primary { background: #0a5; border-color: #0a5; color: #fff; }
+  .btn-danger { background: #7a2c26; border-color: #a33; }
+</style>
+</head>
+<body>
+  <header>
+    <a href="home.html" style="color:#9fd0b0;text-decoration:none;font-size:13px;">← 図面一覧</a>
+    <span><b id="dno">A-101</b> <span id="dtitle">1F平面詳細図</span></span>
+    <span class="tag">施工図</span>
+    <select id="versel" title="版を切替" style="background:#1a1c20;color:#e6e6e6;border:1px solid #444;border-radius:6px;padding:3px 6px;font-size:12px;"></select>
+    <span id="vstatus" class="badge v0">作業中</span>
+    <span id="oldnote" style="color:#e0a94a;font-size:12px;display:none;">旧版（閲覧のみ）</span>
+    <span id="status"></span>
+  </header>
+  <div id="stage">
+    <div id="viewer"><div id="hint"></div></div>
+    <div id="panel">
+      <h3>赤入れ <span id="counts"></span></h3>
+      <div id="mklist"></div>
+    </div>
+  </div>
+  <div class="bar">
+    <label>根拠図面の透明度
+      <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.5" />
+      <span id="opv">50%</span>
+    </label>
+    <label><input id="toggle" type="checkbox" checked /> 重ねる</label>
+    <button id="align">🎯 位置合わせ</button>
+    <button id="markup">📌 赤入れ</button>
+    <button id="reset">位置リセット</button>
+    <button id="approve">✔ 承認フロー</button>
+  </div>
+
+  <div id="modal">
+    <div class="card">
+      <h2>承認フロー</h2>
+      <div class="sub" id="apprSub"></div>
+      <div style="font-size:13px;color:#9aa;margin-bottom:6px;">あなたの役割（PoC切替）</div>
+      <div class="rolepick" id="rolepick"></div>
+      <div id="steps"></div>
+      <div id="okBanner"></div>
+      <div class="modal-foot">
+        <button id="resubmit">↺ 再申請</button>
+        <button id="closeModal">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+import { STATUS, ROLES, resolveDrawing, listVersions, markups as MK, align as AL, approval as AP } from "./data.js";
+
+const $ = (id) => document.getElementById(id);
+const VSTATUS = ["作業中", "社内確認", "提出承認済"];
+const escapeHtml = (s) => (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+const SP = new URLSearchParams(location.search);
+const PARAM = SP.get("drawing"), REV = SP.get("rev");
+let ctx, viewer, baseItem = null, overlayItem = null;
+let mks = [], mkMode = false;
+
+async function boot() {
+  ctx = await resolveDrawing(PARAM, REV);
+  $("dno").textContent = ctx.no;
+  $("dtitle").textContent = ctx.title;
+  $("status").textContent = ctx.overlay ? "根拠図面: " + ctx.overlay.label : "根拠図面なし";
+  const v0 = Math.max(0, VSTATUS.indexOf(ctx.status));  // 版ステータスをバッジに反映
+  $("vstatus").className = "badge v" + v0; $("vstatus").textContent = VSTATUS[v0] || ctx.status;
+  $("oldnote").style.display = ctx.isOld ? "inline" : "none";
+  await populateVersions();
+
+  viewer = OpenSeadragon({
+    id: "viewer",
+    prefixUrl: "https://cdn.jsdelivr.net/npm/openseadragon@4.1.0/build/openseadragon/images/",
+    tileSources: ctx.baseTile || [],
+    showNavigator: true, navigatorPosition: "TOP_RIGHT",
+    gestureSettingsMouse: { clickToZoom: false },
+  });
+  wireControls();
+
+  if (!ctx.baseTile) {
+    const ph = $("hint");
+    ph.style.display = "block"; ph.style.top = "50%"; ph.style.background = "rgba(60,60,70,.95)";
+    ph.textContent = `「${ctx.no} ${ctx.title}」はタイル未生成です（PoCでは A-101 と設計図のみ生成済み）`;
+    return;
+  }
+  viewer.addHandler("open", async () => {
+    baseItem = viewer.world.getItemAt(0);
+    if (ctx.overlay?.tile) {
+      viewer.addTiledImage({
+        tileSource: ctx.overlay.tile, opacity: 0.5, x: 0, y: 0, width: 1,
+        success: async (e) => { overlayItem = e.item; await applySavedAlign(); },
+      });
+    }
+    mks = await MK.list(ctx); renderPins(); renderList();
+    viewer.addHandler("animation", renderPins);
+  });
+}
+
+/* ===== 版切替 ===== */
+async function populateVersions() {
+  const vers = await listVersions(ctx.no);
+  const sel = $("versel");
+  sel.innerHTML = vers.map((v) =>
+    `<option value="${v.rev}" ${v.rev === ctx.rev ? "selected" : ""}>${v.rev}${v.current ? "（現行）" : "（旧版）"}</option>`
+  ).join("");
+  sel.onchange = () => { location.href = `index.html?drawing=${encodeURIComponent(ctx.no)}&rev=${encodeURIComponent(sel.value)}`; };
+}
+
+/* ===== コントロール ===== */
+function wireControls() {
+  const op = $("opacity"), toggle = $("toggle");
+  op.addEventListener("input", () => {
+    $("opv").textContent = Math.round(op.value * 100) + "%";
+    if (overlayItem && toggle.checked) overlayItem.setOpacity(Number(op.value));
+  });
+  toggle.addEventListener("change", () => { if (overlayItem) overlayItem.setOpacity(toggle.checked ? Number(op.value) : 0); });
+
+  $("markup").addEventListener("click", () => {
+    mkMode = !mkMode; $("markup").classList.toggle("active", mkMode);
+    showHint(mkMode ? "図面をクリックして赤入れを追加" : ""); if (!mkMode) hideHint();
+  });
+  $("align").addEventListener("click", () => (alignMode ? endAlign() : startAlign()));
+  $("reset").addEventListener("click", resetAlign);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && alignMode) { clearMarkers(); endAlign(); } });
+
+  $("approve").addEventListener("click", openApproval);
+  $("closeModal").addEventListener("click", () => $("modal").classList.remove("open"));
+  $("modal").addEventListener("click", (e) => { if (e.target === $("modal")) $("modal").classList.remove("open"); });
+  $("resubmit").addEventListener("click", async () => { appr = await AP.resubmit(ctx, appr); renderApproval(); });
+
+  viewer.addHandler("canvas-click", onCanvasClick);
+}
+
+/* ===== 赤入れ ===== */
+async function addMarkupAt(x, y) {
+  const body = prompt("赤入れコメント（例: 配管が梁に干渉）", "");
+  if (body === null) return;
+  mks = await MK.add(ctx, x, y, body); renderPins(); renderList();
+}
+let pinEls = [];
+function renderPins() {
+  if (!baseItem) return;
+  pinEls.forEach((el) => viewer.removeOverlay(el)); pinEls = [];
+  mks.forEach((m, i) => {
+    const vp = baseItem.imageToViewportCoordinates(m.x, m.y);
+    const el = document.createElement("div");
+    el.className = "pin s" + m.status; el.innerHTML = `<span>${i + 1}</span>`;
+    el.title = STATUS[m.status] + ": " + (m.body || "(空)");
+    el.addEventListener("click", (ev) => { ev.stopPropagation(); focusMarkup(m.id); });
+    viewer.addOverlay({ element: el, location: vp, placement: "BOTTOM" }); pinEls.push(el);
+  });
+}
+function renderList() {
+  const list = $("mklist"); list.innerHTML = "";
+  mks.forEach((m, i) => {
+    const row = document.createElement("div"); row.className = "mkrow";
+    row.innerHTML =
+      `<div class="top"><span class="num">${i + 1}</span>
+         <span class="chip s${m.status}" data-act="status">${STATUS[m.status]}</span>
+         <span class="del" data-act="del">✕</span></div>
+       <div class="body">${escapeHtml(m.body) || "<i style='color:#777'>(コメントなし)</i>"}</div>`;
+    row.addEventListener("click", async (e) => {
+      const act = e.target.getAttribute("data-act");
+      if (act === "status") { mks = await MK.update(ctx, m.id, { status: (m.status + 1) % 3 }); renderPins(); renderList(); }
+      else if (act === "del") { mks = await MK.remove(ctx, m.id); renderPins(); renderList(); }
+      else focusMarkup(m.id);
+    });
+    list.appendChild(row);
+  });
+  const c = [0, 1, 2].map((s) => mks.filter((m) => m.status === s).length);
+  $("counts").textContent = `未対応${c[0]} / 対応中${c[1]} / 解決${c[2]}`;
+}
+function focusMarkup(id) {
+  const m = mks.find((x) => x.id === id); if (!m || !baseItem) return;
+  viewer.viewport.panTo(baseItem.imageToViewportCoordinates(m.x, m.y), false);
+}
+
+/* ===== 2点位置合わせ ===== */
+let alignMode = false, clicks = [], markers = [];
+const STEPS = [
+  "① 施工図(下)の特徴点をクリック 〔赤〕",
+  "② ①と同じ場所を 設計図 上でクリック 〔青〕",
+  "③ 施工図(下)の別の特徴点をクリック 〔赤〕",
+  "④ ③と同じ場所を 設計図 上でクリック 〔青〕",
+];
+function startAlign() {
+  if (!overlayItem) return;
+  if (mkMode) $("markup").click();
+  alignMode = true; clicks = []; clearMarkers();
+  $("align").classList.add("active"); $("align").textContent = "位置合わせ中… (Esc中止)";
+  const op = $("opacity"); op.value = 0.55; op.dispatchEvent(new Event("input")); showHint(STEPS[0]);
+}
+function endAlign() { alignMode = false; $("align").classList.remove("active"); $("align").textContent = "🎯 位置合わせ"; hideHint(); }
+const hint = () => $("hint");
+function showHint(t) { hint().textContent = t; hint().style.display = t ? "block" : "none"; }
+function hideHint() { hint().style.display = "none"; }
+
+function onCanvasClick(e) {
+  const vp = viewer.viewport.pointFromPixel(e.position);
+  if (alignMode) {
+    e.preventDefaultAction = true;
+    const isBase = clicks.length % 2 === 0;
+    clicks.push({ x: vp.x, y: vp.y });
+    addMarker(vp, isBase ? "base" : "ov", Math.floor(clicks.length / 2) + 1);
+    if (clicks.length < 4) { showHint(STEPS[clicks.length]); return; }
+    computeAndApply(); endAlign();
+  } else if (mkMode) {
+    if (!baseItem) return;
+    e.preventDefaultAction = true;
+    const img = baseItem.viewportToImageCoordinates(vp);
+    addMarkupAt(img.x, img.y);
+  }
+}
+async function computeAndApply() {
+  const [P1, Q1, P2, Q2] = clicks;
+  const dP = Math.hypot(P2.x - P1.x, P2.y - P1.y), dQ = Math.hypot(Q2.x - Q1.x, Q2.y - Q1.y);
+  const s = dQ > 1e-9 ? dP / dQ : 1;
+  const b = overlayItem.getBounds();
+  const nx = P1.x + s * (b.x - Q1.x), ny = P1.y + s * (b.y - Q1.y), nw = s * b.width;
+  overlayItem.setPosition(new OpenSeadragon.Point(nx, ny), true); overlayItem.setWidth(nw, true);
+  await AL.save(ctx, { x: nx, y: ny, width: nw, scale: s });
+  $("status").textContent = `位置合わせ済 (scale=${s.toFixed(3)})`;
+  setTimeout(clearMarkers, 1200);
+}
+async function applySavedAlign() {
+  const t = await AL.get(ctx); if (!t) return;
+  overlayItem.setPosition(new OpenSeadragon.Point(t.x, t.y), true); overlayItem.setWidth(t.width, true);
+  $("status").textContent = `位置合わせ復元済 (scale=${(t.scale || 1).toFixed(3)})`;
+}
+async function resetAlign() {
+  await AL.reset(ctx);
+  if (overlayItem) { overlayItem.setPosition(new OpenSeadragon.Point(0, 0), true); overlayItem.setWidth(1, true); }
+  clearMarkers(); $("status").textContent = "位置合わせをリセットしました";
+}
+function addMarker(vp, kind, num) {
+  const el = document.createElement("div"); el.className = "mk " + kind; el.textContent = num;
+  viewer.addOverlay({ element: el, location: vp, placement: "CENTER" }); markers.push(el);
+}
+function clearMarkers() { markers.forEach((m) => viewer.removeOverlay(m)); markers = []; }
+
+/* ===== 多段承認 ===== */
+let myRole = "施工図担当", appr = null;
+function currentStepIndex() {
+  for (let i = 0; i < appr.steps.length; i++) { if (appr.steps[i].decision === "承認") continue; return i; }
+  return -1;
+}
+function versionStatus() {
+  if (appr.state === "承認済") return 2;
+  return appr.steps.some((s) => s.decision) ? 1 : 0;
+}
+function updateBadge() {
+  const v = versionStatus(), b = $("vstatus"); b.className = "badge v" + v; b.textContent = VSTATUS[v];
+}
+async function openApproval() {
+  appr = await AP.get(ctx);
+  $("apprSub").textContent = `${ctx.no} ${ctx.title} / ${ctx.rev}　${ROLES.join(" → ")}`;
+  renderApproval(); $("modal").classList.add("open");
+}
+function renderApproval() {
+  const rp = $("rolepick"); rp.innerHTML = "";
+  ROLES.forEach((r) => {
+    const b = document.createElement("button"); b.textContent = r;
+    if (r === myRole) b.classList.add("active");
+    b.onclick = () => { myRole = r; renderApproval(); }; rp.appendChild(b);
+  });
+  const cur = currentStepIndex(), host = $("steps"); host.innerHTML = "";
+  appr.steps.forEach((s, i) => {
+    const div = document.createElement("div"); div.className = "step";
+    let icon = s.seq;
+    if (s.decision === "承認") { div.classList.add("ok"); icon = "✓"; }
+    else if (s.decision === "差戻し") { div.classList.add("ng"); icon = "✕"; }
+    if (i === cur && appr.state !== "承認済") div.classList.add("cur");
+    div.innerHTML =
+      `<div class="dot">${icon}</div>
+       <div><div class="role">${s.role}</div>
+       <div class="meta">${s.decision ? s.decision + (s.comment ? "：" + escapeHtml(s.comment) : "") : (i === cur ? "承認待ち" : "—")}</div></div>
+       <div class="acts"></div>`;
+    if (i === cur && appr.state !== "承認済" && s.role === myRole) {
+      const ok = document.createElement("button"); ok.className = "btn-primary"; ok.textContent = "承認";
+      ok.onclick = () => decide(s, "承認");
+      const ng = document.createElement("button"); ng.className = "btn-danger"; ng.textContent = "差戻し";
+      ng.onclick = () => decide(s, "差戻し");
+      div.querySelector(".acts").append(ok, ng);
+    }
+    host.appendChild(div);
+  });
+  const banner = $("okBanner"), cur2 = currentStepIndex();
+  banner.innerHTML = appr.state === "承認済"
+    ? `<div class="ok-banner">✔ 全承認完了 — この版は「提出承認済(Published)」になりました</div>`
+    : (cur2 >= 0 && appr.steps[cur2].role !== myRole && appr.state !== "差戻し"
+        ? `<div class="sub" style="margin-top:8px">いまは <b>${appr.steps[cur2].role}</b> の承認待ち（役割を切替えて操作を試せます）</div>` : "");
+  updateBadge();
+}
+async function decide(step, decision) {
+  let comment = "";
+  if (decision === "差戻し") { comment = prompt("差戻し理由", ""); if (comment === null) return; }
+  appr = await AP.decide(ctx, appr, step.key, decision, comment); renderApproval();
+}
+
+boot();
+</script>
+</body>
+</html>

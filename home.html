@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>施工図CDE - 図面一覧</title>
+<script src="./config.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #1a1c20; color: #e6e6e6; }
+  header { padding: 12px 20px; background: #24272e; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 14px; }
+  header b { color: #6fd08c; }
+  header .sp { flex: 1; }
+  header .who { font-size: 13px; color: #9aa; }
+  header button { background: #3a3f4b; color: #e6e6e6; border: 1px solid #555; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  .banner { background: #2c2612; color: #e6c06a; padding: 8px 20px; font-size: 13px; border-bottom: 1px solid #4a3f1a; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 20px; }
+  .proj { font-size: 15px; margin-bottom: 14px; }
+  .proj select { background: #24272e; color: #e6e6e6; border: 1px solid #444; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab { padding: 6px 14px; border-radius: 16px; border: 1px solid #444; background: #24272e; color: #cdd3dc; cursor: pointer; font-size: 13px; }
+  .tab.active { background: #0a5; border-color: #0a5; color: #fff; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid #2d3038; font-size: 14px; }
+  th { color: #9aa; font-size: 12px; font-weight: 600; }
+  tr.row { cursor: pointer; } tr.row:hover td { background: #262a32; }
+  .no { font-family: ui-monospace, monospace; color: #9fd0b0; }
+  .type { font-size: 11px; padding: 2px 8px; border-radius: 4px; color: #fff; }
+  .t-施工図 { background: #0a5; } .t-設計図 { background: #2f7fe0; } .t-製作図 { background: #8a5cd0; }
+  .t-構造図 { background: #b0642b; } .t-設備図 { background: #2b9fb0; } .t-総合図 { background: #666; }
+  .st { font-size: 11px; padding: 2px 8px; border-radius: 10px; color: #fff; }
+  .st-作業中 { background: #6b7280; } .st-社内確認 { background: #d98a2b; } .st-提出承認済 { background: #2f9e5b; }
+  .lk { color: #9fd0b0; }
+  .empty { color: #777; padding: 30px; text-align: center; }
+</style>
+</head>
+<body>
+  <header>
+    <span><b>施工図CDE</b> 図面一覧</span>
+    <span class="sp"></span>
+    
+    <span class="who" id="who"></span>
+    <button id="logout" style="display:none">ログアウト</button>
+  </header>
+
+  <div id="modal" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:100;">
+    <div style="background:#24272e;border:1px solid #3a3f4b;border-radius:12px;width:400px;max-width:92vw;padding:22px;">
+      <h2 style="margin:0 0 14px;font-size:17px;">図面アップロード</h2>
+      <input id="pdf" type="file" accept="application/pdf" style="width:100%;margin-bottom:12px;color:#cdd;" />
+      <label style="font-size:12px;color:#9aa;">図面番号</label>
+      <input id="u_no" placeholder="A-201" style="width:100%;padding:8px;margin:4px 0 10px;border-radius:6px;border:1px solid #444;background:#1a1c20;color:#e6e6e6;" />
+      <label style="font-size:12px;color:#9aa;">図面名</label>
+      <input id="u_title" placeholder="3F平面詳細図" style="width:100%;padding:8px;margin:4px 0 10px;border-radius:6px;border:1px solid #444;background:#1a1c20;color:#e6e6e6;" />
+      <label style="font-size:12px;color:#9aa;">種別</label>
+      <select id="u_type" style="width:100%;padding:8px;margin:4px 0 14px;border-radius:6px;border:1px solid #444;background:#1a1c20;color:#e6e6e6;">
+        <option>施工図</option><option>設計図</option><option>製作図</option><option>構造図</option><option>設備図</option>
+      </select>
+      <div id="u_msg" style="font-size:13px;min-height:18px;color:#d98a2b;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:10px;">
+        <button id="u_go" style="flex:1;background:#0a5;border-color:#0a5;color:#fff;">アップロード</button>
+        <button id="u_close" style="flex:1;">閉じる</button>
+      </div>
+    </div>
+  </div>
+  <div class="banner" id="banner" style="display:none"></div>
+  <div class="wrap">
+    <div class="proj">案件： <select id="projsel"></select></div>
+    <div class="tabs" id="tabs"></div>
+    <table>
+      <thead><tr><th>図面番号</th><th>図面名</th><th>種別</th><th>版</th><th>状態</th><th>根拠図面</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none">図面がありません</div>
+  </div>
+
+<script type="module">
+import { auth, db } from "./db.js";
+
+const TYPES = ["全て", "施工図", "設計図", "製作図", "構造図", "設備図"];
+let curType = "全て", allDrawings = [];
+
+// ---- デモデータ（Supabase未設定時） ----
+const DEMO = {
+  projects: [{ id: "demo", name: "○○ビル新築工事" }],
+  drawings: [
+    { drawing_no: "A-101", title: "1F平面詳細図", type: "施工図", rev: "Rev.C", status: "作業中", links: 1 },
+    { drawing_no: "A-102", title: "2F平面詳細図", type: "施工図", rev: "Rev.B", status: "社内確認", links: 0 },
+    { drawing_no: "A-意匠101", title: "1F平面図(実施設計)", type: "設計図", rev: "Rev.2", status: "提出承認済", links: 0 },
+    { drawing_no: "S-201", title: "伏図", type: "構造図", rev: "Rev.A", status: "提出承認済", links: 0 },
+    { drawing_no: "M-301", title: "空調ダクト製作図", type: "製作図", rev: "Rev.A", status: "作業中", links: 0 },
+  ],
+};
+
+async function boot() {
+  if (!db.enabled) {
+    document.getElementById("banner").style.display = "block";
+    document.getElementById("banner").innerHTML = "⚠ Supabase未設定：<b>デモ表示</b>（config.jsにURL/keyを設定すると実データに切替）";
+    fillProjects(DEMO.projects);
+    allDrawings = await loadDemoDrawings();
+    renderTabs(); renderRows();
+    return;
+  }
+  const user = await auth.user();
+  if (!user) return (location.href = "login.html");
+  document.getElementById("who").textContent = user.email;
+  const lo = document.getElementById("logout");
+  lo.style.display = "inline-block";
+  lo.onclick = async () => { await auth.signOut(); location.href = "login.html"; };
+
+  const projects = await db.listProjects();
+  fillProjects(projects);
+  if (projects[0]) await loadProject(projects[0].id);
+  renderTabs();
+}
+
+function fillProjects(projects) {
+  const sel = document.getElementById("projsel");
+  sel.innerHTML = projects.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+  sel.onchange = () => { if (db.enabled) loadProject(sel.value); };
+}
+
+async function loadProject(pid) {
+  const ds = await db.listDrawings(pid);
+  // 施工図には紐付く根拠図面数を付与
+  for (const d of ds) {
+    d.rev = ""; d.status = ""; d.links = 0;
+    if (d.type === "施工図") { try { d.links = (await db.listLinks(d.id)).length; } catch {} }
+  }
+  allDrawings = ds;
+  renderRows();
+}
+
+function renderTabs() {
+  const host = document.getElementById("tabs"); host.innerHTML = "";
+  TYPES.forEach((t) => {
+    const el = document.createElement("div");
+    el.className = "tab" + (t === curType ? " active" : ""); el.textContent = t;
+    el.onclick = () => { curType = t; renderTabs(); renderRows(); };
+    host.appendChild(el);
+  });
+}
+
+function renderRows() {
+  const tbody = document.getElementById("rows"); tbody.innerHTML = "";
+  const list = allDrawings.filter((d) => curType === "全て" || d.type === curType);
+  document.getElementById("empty").style.display = list.length ? "none" : "block";
+  for (const d of list) {
+    const tr = document.createElement("tr"); tr.className = "row";
+    tr.innerHTML =
+      `<td class="no">${d.drawing_no}</td>
+       <td>${d.title}</td>
+       <td><span class="type t-${d.type}">${d.type}</span></td>
+       <td>${d.rev || "—"}${d.vers > 1 ? ` <span style="color:#9aa;font-size:11px">🕘${d.vers}版</span>` : ""}</td>
+       <td>${d.status ? `<span class="st st-${d.status}">${d.status}</span>` : "—"}</td>
+       <td class="lk">${d.type === "施工図" ? "🔗 " + (d.links || 0) : "—"}</td>`;
+    // クリックで突合ビューへ（図面番号を渡す）
+    tr.onclick = () => (location.href = "index.html?drawing=" + encodeURIComponent(d.drawing_no));
+    tbody.appendChild(tr);
+  }
+}
+
+// アップ済み(レジストリ) + 静的デモ をマージ
+async function loadDemoDrawings() {
+  let reg = [];
+  try { reg = await fetch("/api/drawings").then((r) => r.json()); } catch {}
+  // 図面番号ごとにグループ化 → 現行版のみ一覧表示（履歴版数を付与）
+  const byNo = {};
+  reg.forEach((e) => { (byNo[e.no] = byNo[e.no] || []).push(e); });
+  const uploaded = Object.values(byNo).map((vs) => {
+    const cur = vs.find((v) => v.status !== "旧版") || vs[vs.length - 1];
+    return { drawing_no: cur.no, title: cur.title, type: cur.type, rev: cur.rev, status: cur.status, links: 0, vers: vs.length };
+  });
+  const upNos = new Set(uploaded.map((d) => d.drawing_no));
+  return [...uploaded, ...DEMO.drawings.filter((d) => !upNos.has(d.drawing_no))];
+}
+async function reloadList() {
+  if (!db.enabled) { allDrawings = await loadDemoDrawings(); renderRows(); }
+}
+
+// ---- アップロードモーダル ----
+const modal = document.getElementById("modal");
+const _ub=document.getElementById("uploadBtn"); if(_ub)_ub.onclick=()=>(modal.style.display="flex");
+document.getElementById("u_close").onclick = () => (modal.style.display = "none");
+modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
+
+document.getElementById("u_go").onclick = async () => {
+  const msg = document.getElementById("u_msg");
+  const f = document.getElementById("pdf").files[0];
+  const no = document.getElementById("u_no").value.trim();
+  const title = document.getElementById("u_title").value.trim() || no;
+  const type = document.getElementById("u_type").value;
+  if (!f || !no) { msg.textContent = "PDFと図面番号は必須"; return; }
+  msg.textContent = "アップロード中…";
+  const qs = `?no=${encodeURIComponent(no)}&title=${encodeURIComponent(title)}&type=${encodeURIComponent(type)}`;
+  let jobId;
+  try {
+    const r = await fetch("/api/upload" + qs, { method: "POST", headers: { "Content-Type": "application/pdf" }, body: await f.arrayBuffer() });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "失敗");
+    jobId = j.jobId;
+  } catch (e) { msg.textContent = "エラー: " + e.message; return; }
+  // 非同期タイル化をポーリング
+  msg.textContent = "タイル変換中…（大判は数秒）";
+  for (let i = 0; i < 30; i++) {
+    await new Promise((s) => setTimeout(s, 1000));
+    const st = await fetch("/api/jobs/" + jobId).then((r) => r.json());
+    if (st.status === "完了") { msg.textContent = `完了（${st.tiles}タイル）`; await reloadList(); setTimeout(() => (modal.style.display = "none"), 800); return; }
+    if (st.status === "失敗") { msg.textContent = "変換失敗: " + (st.error || ""); return; }
+  }
+  msg.textContent = "タイムアウト（変換が長すぎます）";
+};
+
+boot();
+</script>
+</body>
+</html>
