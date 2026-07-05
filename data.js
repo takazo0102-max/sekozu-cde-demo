@@ -3,8 +3,17 @@
 import { db } from "./db.js";
 
 const TILE_BASE = window.TILE_BASE || "";
-const dziUrl = (id) => `${TILE_BASE}tiles/${id}/image.dzi`;
 const keyUrl = (r2key) => `${TILE_BASE}/${r2key}`;
+const DIM = { w: 6623, h: 4678 };   // サンプル図面の実寸(px)
+// .dzi を取りに行かず、DZI記述子オブジェクトを直接OSDへ渡す（Pagesのcontent-type問題を回避）
+const tileSrc = (id, w = DIM.w, h = DIM.h) => ({
+  Image: {
+    xmlns: "http://schemas.microsoft.com/deepzoom/2008",
+    Url: `${TILE_BASE}tiles/${id}/image_files/`,
+    Format: "webp", Overlap: "1", TileSize: "512",
+    Size: { Width: Number(w) || DIM.w, Height: Number(h) || DIM.h },
+  },
+});
 export const STATUS = ["未対応", "対応中", "解決"];
 export const ROLES = ["協力会社", "施工図担当", "元請"];
 
@@ -44,14 +53,14 @@ export async function resolveDrawing(no, rev) {
     if (vs.length) {
       const e = (rev && vs.find((x) => x.rev === rev)) || vs.find(isCurrent) || vs[vs.length - 1];
       return { mode: "demo", no: e.no, title: e.title, rev: e.rev, status: e.status,
-        baseTile: dziUrl(e.tileId), overlay: null, versionId: null, isOld: e.status === "旧版" };
+        baseTile: tileSrc(e.tileId, e.width, e.height), overlay: null, versionId: null, isOld: e.status === "旧版" };
     }
     const key = DEMO[no] ? no : "A-101";
     const d = DEMO[key];
     return {
       mode: "demo", no: key, title: d.title, rev: d.rev, status: d.status,
-      baseTile: d.tile ? dziUrl(d.tile) : null,
-      overlay: d.overlay ? { tile: dziUrl(d.overlay.tile), label: d.overlay.label, linkId: null, transform: null } : null,
+      baseTile: d.tile ? tileSrc(d.tile) : null,
+      overlay: d.overlay ? { tile: tileSrc(d.overlay.tile), label: d.overlay.label, linkId: null, transform: null } : null,
       versionId: null,
     };
   }
