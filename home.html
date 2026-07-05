@@ -78,6 +78,7 @@ import { auth, db } from "./db.js";
 
 const TYPES = ["全て", "施工図", "設計図", "製作図", "構造図", "設備図"];
 let curType = "全て", allDrawings = [];
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // ---- デモデータ（Supabase未設定時） ----
 const DEMO = {
@@ -147,12 +148,12 @@ function renderRows() {
   for (const d of list) {
     const tr = document.createElement("tr"); tr.className = "row";
     tr.innerHTML =
-      `<td class="no">${d.drawing_no}</td>
-       <td>${d.title}</td>
-       <td><span class="type t-${d.type}">${d.type}</span></td>
-       <td>${d.rev || "—"}${d.vers > 1 ? ` <span style="color:#9aa;font-size:11px">🕘${d.vers}版</span>` : ""}</td>
-       <td>${d.status ? `<span class="st st-${d.status}">${d.status}</span>` : "—"}</td>
-       <td class="lk">${d.type === "施工図" ? "🔗 " + (d.links || 0) : "—"}</td>`;
+      `<td class="no">${esc(d.drawing_no)}</td>
+       <td>${esc(d.title)}</td>
+       <td><span class="type t-${esc(d.type)}">${esc(d.type)}</span></td>
+       <td>${esc(d.rev) || "—"}${d.vers > 1 ? ` <span style="color:#9aa;font-size:11px">🕘${Number(d.vers)}版</span>` : ""}</td>
+       <td>${d.status ? `<span class="st st-${esc(d.status)}">${esc(d.status)}</span>` : "—"}</td>
+       <td class="lk">${d.type === "施工図" ? "🔗 " + Number(d.links || 0) : "—"}</td>`;
     // クリックで突合ビューへ（図面番号を渡す）
     tr.onclick = () => (location.href = "index.html?drawing=" + encodeURIComponent(d.drawing_no));
     tbody.appendChild(tr);
