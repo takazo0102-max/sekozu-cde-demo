@@ -78,12 +78,15 @@
     </div>
   </div>
   <div class="bar">
-    <label>根拠図面の透明度
+    <label>根拠図面<span style="color:#3a86ff">(青)</span>の透明度
       <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.5" />
       <span id="opv">50%</span>
     </label>
     <label><input id="toggle" type="checkbox" checked /> 重ねる</label>
-    <button id="align">🎯 位置合わせ</button>
+    <button id="adjust">🔧 微調整(ドラッグ)</button>
+    <button id="scaleDown" title="設計図を縮小">－</button>
+    <button id="scaleUp" title="設計図を拡大">＋</button>
+    <button id="align">🎯 2点合わせ</button>
     <button id="markup">📌 赤入れ</button>
     <button id="reset">位置リセット</button>
     <button id="approve">✔ 承認フロー</button>
@@ -186,6 +189,37 @@ function wireControls() {
   $("reset").addEventListener("click", resetAlign);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && alignMode) { clearMarkers(); endAlign(); } });
 
+  // ---- 微調整: ドラッグで移動 / ＋－で拡大縮小 / 矢印キー ----
+  $("adjust").addEventListener("click", () => {
+    adjustMode = !adjustMode;
+    $("adjust").classList.toggle("active", adjustMode);
+    if (adjustMode) {
+      if (mkMode) $("markup").click();
+      if (alignMode) { clearMarkers(); endAlign(); }
+      op.value = 0.6; op.dispatchEvent(new Event("input"));
+      showHint("設計図(青)をドラッグで移動 ／ ＋－で拡大縮小 ／ 矢印キーで微調整");
+    } else hideHint();
+  });
+  $("scaleUp").addEventListener("click", () => scaleOverlay(1.02));
+  $("scaleDown").addEventListener("click", () => scaleOverlay(1 / 1.02));
+  viewer.addHandler("canvas-drag", (e) => {
+    if (!adjustMode || !overlayItem) return;
+    e.preventDefaultAction = true;
+    const d = viewer.viewport.deltaPointsFromPixels(new OpenSeadragon.Point(e.delta.x, e.delta.y));
+    const b = overlayItem.getBounds();
+    overlayItem.setPosition(new OpenSeadragon.Point(b.x + d.x, b.y + d.y), true);
+  });
+  viewer.addHandler("canvas-drag-end", () => { if (adjustMode && overlayItem) saveOverlay(); });
+  document.addEventListener("keydown", (e) => {
+    if (!adjustMode || !overlayItem) return;
+    const step = 0.004; let dx = 0, dy = 0;
+    if (e.key === "ArrowLeft") dx = -step; else if (e.key === "ArrowRight") dx = step;
+    else if (e.key === "ArrowUp") dy = -step; else if (e.key === "ArrowDown") dy = step; else return;
+    e.preventDefault();
+    const b = overlayItem.getBounds();
+    overlayItem.setPosition(new OpenSeadragon.Point(b.x + dx, b.y + dy), true); saveOverlay();
+  });
+
   $("approve").addEventListener("click", openApproval);
   $("closeModal").addEventListener("click", () => $("modal").classList.remove("open"));
   $("modal").addEventListener("click", (e) => { if (e.target === $("modal")) $("modal").classList.remove("open"); });
@@ -239,7 +273,21 @@ function focusMarkup(id) {
 }
 
 /* ===== 2点位置合わせ ===== */
-let alignMode = false, clicks = [], markers = [];
+let alignMode = false, adjustMode = false, clicks = [], markers = [];
+function scaleOverlay(f) {
+  if (!overlayItem) return;
+  const b = overlayItem.getBounds();
+  const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+  overlayItem.setWidth(b.width * f, true);
+  const nb = overlayItem.getBounds();
+  overlayItem.setPosition(new OpenSeadragon.Point(cx - nb.width / 2, cy - nb.height / 2), true);
+  saveOverlay();
+}
+function saveOverlay() {
+  const b = overlayItem.getBounds();
+  AL.save(ctx, { x: b.x, y: b.y, width: b.width, scale: b.width });
+  $("status").textContent = `位置調整済 (scale=${b.width.toFixed(3)})`;
+}
 const STEPS = [
   "① 施工図(下)の特徴点をクリック 〔赤〕",
   "② ①と同じ場所を 設計図 上でクリック 〔青〕",
