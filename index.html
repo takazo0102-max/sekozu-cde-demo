@@ -7,94 +7,155 @@
 <script src="https://cdn.jsdelivr.net/npm/openseadragon@4.1.0/build/openseadragon/openseadragon.min.js"></script>
 <script src="./config.js"></script>
 <style>
+  :root {
+    --bg: #0f1319; --surface: #161b22; --surface-2: #1d232c; --raised: #232a34;
+    --line: #29313c; --line-soft: #212832;
+    --ink: #e9edf2; --muted: #8b96a5; --faint: #6b7482;
+    --accent: #46b3a1; --accent-ink: #0c1512;
+    --sekou: #e0483d; --sekkei: #3a86ff;
+    --amber: #d9a441; --green: #43a86a;
+    --sans: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, "Roboto Mono", monospace;
+    --r: 8px;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, sans-serif; background: #1a1c20; color: #e6e6e6; }
-  header { padding: 10px 16px; background: #24272e; border-bottom: 1px solid #333; display: flex; gap: 12px; align-items: center; }
-  header b { color: #6fd08c; }
-  #stage { display: flex; height: calc(100vh - 112px); }
-  #viewer { flex: 1; background: #2b2e35; position: relative; }
-  #panel { width: 300px; background: #21242b; border-left: 1px solid #333; display: flex; flex-direction: column; }
-  #panel h3 { margin: 0; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
+  body { margin: 0; font-family: var(--sans); background: var(--bg); color: var(--ink); font-size: 14px; }
+
+  /* ---- Header ---- */
+  header { height: 52px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); display: flex; gap: 14px; align-items: center; }
+  .back { color: var(--muted); text-decoration: none; font-size: 13px; white-space: nowrap; transition: color .15s; }
+  .back:hover { color: var(--ink); }
+  .dno { font-family: var(--mono); font-weight: 600; font-size: 15px; letter-spacing: .04em; color: var(--ink); }
+  .dtitle { color: var(--muted); font-size: 13px; }
+  .tag { font-family: var(--mono); font-size: 11px; letter-spacing: .05em; padding: 3px 8px; border-radius: 5px; background: rgba(224,72,61,.14); color: #f0857c; border: 1px solid rgba(224,72,61,.3); }
+  .versel { font-family: var(--mono); background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; }
+  .grow { flex: 1; }
+  .statusmsg { color: var(--faint); font-size: 12px; font-family: var(--mono); }
+  .oldnote { color: var(--amber); font-size: 12px; }
+  .badge { font-family: var(--mono); padding: 3px 9px; border-radius: 20px; font-size: 11px; letter-spacing: .03em; border: 1px solid transparent; }
+  .badge.v0 { background: rgba(139,150,165,.15); color: #aab3c0; border-color: rgba(139,150,165,.3); }
+  .badge.v1 { background: rgba(217,164,65,.15); color: var(--amber); border-color: rgba(217,164,65,.35); }
+  .badge.v2 { background: rgba(67,168,106,.16); color: #6fce93; border-color: rgba(67,168,106,.4); }
+
+  /* ---- Stage ---- */
+  #stage { display: flex; height: calc(100vh - 52px - 60px); }
+  #viewer { flex: 1; position: relative; background:
+    repeating-linear-gradient(0deg, transparent 0 23px, rgba(255,255,255,.02) 23px 24px),
+    repeating-linear-gradient(90deg, transparent 0 23px, rgba(255,255,255,.02) 23px 24px), #0c0f14; }
+  #panel { width: 300px; background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+  .panel-head { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+  .panel-title { font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+  .counts { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-left: 6px; }
   #mklist { overflow-y: auto; flex: 1; }
-  .mkrow { padding: 10px 14px; border-bottom: 1px solid #2d3038; font-size: 13px; cursor: pointer; }
-  .mkrow:hover { background: #2a2e37; }
-  .mkrow .top { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
-  .mkrow .body { color: #cdd3dc; }
-  .chip { font-size: 11px; padding: 2px 7px; border-radius: 10px; color: #fff; cursor: pointer; user-select: none; }
-  .chip.s0 { background: #e0483d; } .chip.s1 { background: #d98a2b; } .chip.s2 { background: #2f9e5b; }
-  .num { width: 20px; height: 20px; border-radius: 50%; background: #444; color: #fff; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
-  .del { margin-left: auto; color: #888; }
-  .del:hover { color: #e0483d; }
-  .bar { padding: 8px 16px; background: #24272e; border-top: 1px solid #333; display: flex; gap: 16px; align-items: center; font-size: 14px; flex-wrap: wrap; }
-  .bar label { display: flex; gap: 8px; align-items: center; }
-  input[type=range] { width: 180px; }
-  .tag { background: #0a5; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
-  button { background: #3a3f4b; color: #e6e6e6; border: 1px solid #555; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
-  button:hover { background: #474d5b; }
-  button.active { background: #0a5; border-color: #0a5; color: #fff; }
-  #hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(10,90,60,.95); color: #fff; padding: 8px 16px; border-radius: 8px; font-size: 14px; display: none; z-index: 20; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+  .mkrow { padding: 11px 14px; border-bottom: 1px solid var(--line-soft); font-size: 13px; cursor: pointer; transition: background .12s; }
+  .mkrow:hover { background: var(--surface-2); }
+  .mkrow .top { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; }
+  .mkrow .body { color: #c3ccd6; line-height: 1.45; }
+  .chip { font-family: var(--mono); font-size: 10px; letter-spacing: .03em; padding: 2px 8px; border-radius: 20px; color: #fff; cursor: pointer; user-select: none; }
+  .chip.s0 { background: var(--sekou); } .chip.s1 { background: var(--amber); } .chip.s2 { background: var(--green); }
+  .num { font-family: var(--mono); width: 20px; height: 20px; border-radius: 5px; background: var(--raised); color: var(--ink); font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+  .del { margin-left: auto; color: var(--faint); transition: color .12s; }
+  .del:hover { color: var(--sekou); }
+
+  /* ---- Toolbar ---- */
+  .bar { height: 60px; padding: 0 16px; background: var(--surface); border-top: 1px solid var(--line); display: flex; gap: 16px; align-items: center; overflow-x: auto; }
+  .grp { display: flex; gap: 10px; align-items: center; }
+  .grp-label { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+  .divider { width: 1px; height: 30px; background: var(--line); flex-shrink: 0; }
+  .legend { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .sw-r { background: var(--sekou); } .sw-b { background: var(--sekkei); margin-left: 8px; }
+  .chk { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); white-space: nowrap; cursor: pointer; }
+  .chk input { accent-color: var(--accent); }
+  .rng { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  input[type=range] { width: 130px; accent-color: var(--accent); }
+
+  /* ---- Buttons ---- */
+  button { font-family: var(--sans); background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 7px 13px; cursor: pointer; font-size: 13px; white-space: nowrap; transition: background .13s, border-color .13s, transform .05s; }
+  button:hover { background: var(--raised); border-color: #37414d; }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.active { background: rgba(70,179,161,.16); border-color: var(--accent); color: #7fd6c7; }
+  .btn-accent { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .btn-accent:hover { background: #53c1ae; border-color: #53c1ae; }
+  .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn-ghost:hover { background: var(--surface-2); color: var(--ink); }
+  .btn-sm { padding: 5px 11px; font-size: 12px; }
+  .seg { display: inline-flex; }
+  .seg .btn-icon { border-radius: 0; padding: 7px 11px; font-family: var(--mono); }
+  .seg .btn-icon:first-child { border-radius: 7px 0 0 7px; }
+  .seg .btn-icon:last-child { border-radius: 0 7px 7px 0; border-left: none; }
+
+  /* ---- Overlays / markers ---- */
+  #hint { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(70,179,161,.95); color: var(--accent-ink); padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; display: none; z-index: 20; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
   .mk { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; color: #fff; font-weight: bold; font-size: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
-  .mk.base { background: #e0483d; } .mk.ov { background: #2f7fe0; }
+  .mk.base { background: var(--sekou); } .mk.ov { background: var(--sekkei); }
   .pin { width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.5); cursor: pointer; }
   .pin span { transform: rotate(45deg); display: block; text-align: center; line-height: 22px; color: #fff; font-size: 12px; font-weight: bold; }
-  .pin.s0 { background: #e0483d; } .pin.s1 { background: #d98a2b; } .pin.s2 { background: #2f9e5b; }
-  #status { color: #9aa; font-size: 12px; }
-  .badge { padding: 2px 10px; border-radius: 10px; font-size: 12px; color: #fff; }
-  .badge.v0 { background: #6b7280; } .badge.v1 { background: #d98a2b; } .badge.v2 { background: #2f9e5b; }
-  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 100; }
+  .pin.s0 { background: var(--sekou); } .pin.s1 { background: var(--amber); } .pin.s2 { background: var(--green); }
+
+  /* ---- Approval modal ---- */
+  #modal { position: fixed; inset: 0; background: rgba(6,9,13,.66); backdrop-filter: blur(2px); display: none; align-items: center; justify-content: center; z-index: 100; }
   #modal.open { display: flex; }
-  .card { background: #24272e; border: 1px solid #3a3f4b; border-radius: 12px; width: 460px; max-width: 92vw; padding: 20px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; width: 460px; max-width: 92vw; padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
   .card h2 { margin: 0 0 4px; font-size: 17px; }
-  .card .sub { color: #9aa; font-size: 13px; margin-bottom: 14px; }
-  .rolepick { display: flex; gap: 8px; margin-bottom: 16px; }
+  .card .sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .rolepick { display: flex; gap: 8px; margin-bottom: 18px; }
   .rolepick button { flex: 1; }
-  .step { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid #333; border-radius: 8px; margin-bottom: 8px; }
-  .step.cur { border-color: #0a5; background: #1e2a24; }
-  .step .dot { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; background: #444; color: #fff; flex-shrink: 0; }
-  .step.ok .dot { background: #2f9e5b; } .step.ng .dot { background: #e0483d; }
-  .step .role { font-size: 14px; } .step .meta { font-size: 12px; color: #9aa; margin-top: 2px; }
+  .step { display: flex; gap: 12px; align-items: flex-start; padding: 13px; border: 1px solid var(--line); border-radius: 9px; margin-bottom: 8px; }
+  .step.cur { border-color: var(--accent); background: rgba(70,179,161,.07); }
+  .step .dot { font-family: var(--mono); width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; background: var(--raised); color: var(--ink); flex-shrink: 0; }
+  .step.ok .dot { background: var(--green); } .step.ng .dot { background: var(--sekou); }
+  .step .role { font-size: 14px; } .step .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .step .acts { margin-left: auto; display: flex; gap: 6px; }
-  .modal-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
-  .ok-banner { background: #1e3a2a; border: 1px solid #2f9e5b; color: #8fe0ab; padding: 10px; border-radius: 8px; text-align: center; margin-top: 10px; }
-  .btn-primary { background: #0a5; border-color: #0a5; color: #fff; }
-  .btn-danger { background: #7a2c26; border-color: #a33; }
+  .modal-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
+  .ok-banner { background: rgba(67,168,106,.12); border: 1px solid rgba(67,168,106,.4); color: #7fd6a0; padding: 11px; border-radius: 9px; text-align: center; margin-top: 10px; }
+  .btn-primary { background: var(--green); border-color: var(--green); color: #06210f; font-weight: 600; }
+  .btn-danger { background: rgba(224,72,61,.16); border-color: rgba(224,72,61,.5); color: #f0857c; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
   <header>
-    <a href="home.html" style="color:#9fd0b0;text-decoration:none;font-size:13px;">← 図面一覧</a>
-    <span><b id="dno">A-101</b> <span id="dtitle">1F平面詳細図</span></span>
-    <span class="tag">施工図</span>
-    <select id="versel" title="版を切替" style="background:#1a1c20;color:#e6e6e6;border:1px solid #444;border-radius:6px;padding:3px 6px;font-size:12px;"></select>
+    <a class="back" href="home.html">← 図面一覧</a>
+    <span class="divider"></span>
+    <span class="dno" id="dno">A-101</span>
+    <span class="dtitle" id="dtitle">1F平面詳細図</span>
+    <span class="tag" id="dtype">施工図</span>
+    <select id="versel" class="versel" title="版を切替"></select>
     <span id="vstatus" class="badge v0">作業中</span>
-    <span id="oldnote" style="color:#e0a94a;font-size:12px;display:none;">旧版（閲覧のみ）</span>
-    <span id="status"></span>
+    <span id="oldnote" class="oldnote" style="display:none;">旧版・閲覧のみ</span>
+    <span class="grow"></span>
+    <span id="status" class="statusmsg"></span>
+    <button id="approve" class="btn-accent">承認フロー</button>
   </header>
   <div id="stage">
     <div id="viewer"><div id="hint"></div></div>
     <div id="panel">
-      <h3>赤入れ <span id="counts"></span></h3>
+      <div class="panel-head">
+        <div><span class="panel-title">赤入れ</span><span id="counts" class="counts"></span></div>
+        <button id="markup" class="btn-sm">＋ ピン追加</button>
+      </div>
       <div id="mklist"></div>
     </div>
   </div>
   <div class="bar">
-    <label>根拠図面<span style="color:#3a86ff">(青)</span>の透明度
-      <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.5" />
-      <span id="opv">50%</span>
-    </label>
-    <label><input id="toggle" type="checkbox" checked /> 重ねる</label>
-    <span style="font-size:12px;color:#9aa;display:flex;align-items:center;gap:5px;">
-      <span style="width:11px;height:11px;background:#c62828;border-radius:2px;display:inline-block;"></span>施工図
-      <span style="width:11px;height:11px;background:#1560d0;border-radius:2px;display:inline-block;margin-left:6px;"></span>設計図
-    </span>
-    <button id="autoAlign">✨ 自動合わせ</button>
-    <button id="adjust">🔧 微調整(ドラッグ)</button>
-    <button id="scaleDown" title="設計図を縮小">－</button>
-    <button id="scaleUp" title="設計図を拡大">＋</button>
-    <button id="align">🎯 2点合わせ</button>
-    <button id="markup">📌 赤入れ</button>
-    <button id="reset">位置リセット</button>
-    <button id="approve">✔ 承認フロー</button>
+    <div class="grp">
+      <span class="grp-label">重ね合わせ</span>
+      <span class="legend"><span class="sw sw-r"></span>施工図<span class="sw sw-b"></span>設計図</span>
+      <label class="chk"><input id="toggle" type="checkbox" checked /> 重ねる</label>
+      <label class="rng">透明度 <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.5" /><span id="opv">50%</span></label>
+    </div>
+    <span class="divider"></span>
+    <div class="grp">
+      <span class="grp-label">位置合わせ</span>
+      <button id="autoAlign" class="btn-accent">✨ 自動合わせ</button>
+      <button id="adjust">🔧 微調整</button>
+      <span class="seg"><button id="scaleDown" class="btn-icon" title="設計図を縮小">－</button><button id="scaleUp" class="btn-icon" title="設計図を拡大">＋</button></span>
+      <button id="align">2点合わせ</button>
+      <button id="reset" class="btn-ghost">リセット</button>
+    </div>
   </div>
 
   <div id="modal">
