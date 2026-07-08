@@ -17,13 +17,20 @@ const tileSrc = (id, w = DIM.w, h = DIM.h) => ({
 export const STATUS = ["未対応", "対応中", "解決"];
 export const ROLES = ["協力会社", "施工図担当", "元請"];
 
-// ---- デモ図面レジストリ（タイル生成済みは A-101 / 設計図のみ）----
+// ---- デモ図面レジストリ ----
+// 施工図(赤)をハブに、意匠図(青)/構造図(緑)/設備図(橙)を根拠図面として複数重ねられる
 const DEMO = {
-  "A-101":     { tile: "a-101",      title: "1F平面詳細図",      rev: "Rev.C", status: "作業中",   overlay: { tile: "sekkei-101", label: "A-意匠101（設計図）" } },
-  "A-意匠101":  { tile: "sekkei-101", title: "1F平面図(実施設計)", rev: "Rev.2", status: "提出承認済" },
-  "A-102":     { tile: null,         title: "2F平面詳細図",      rev: "Rev.B", status: "社内確認" },
-  "S-201":     { tile: null,         title: "伏図",             rev: "Rev.A", status: "提出承認済" },
-  "M-301":     { tile: null,         title: "空調ダクト製作図",   rev: "Rev.A", status: "作業中" },
+  "A-101": {
+    tile: "a-101", title: "1F平面詳細図", rev: "Rev.C", status: "作業中",
+    overlays: [
+      { tile: "ishou-101",   label: "意匠図 A-意匠101", color: "#3a86ff" },
+      { tile: "kouzou-101",  label: "構造図 S-101",     color: "#2f9e5b" },
+      { tile: "setsubi-101", label: "設備図 M-101",     color: "#d9822b" },
+    ],
+  },
+  "A-意匠101": { tile: "ishou-101",  title: "1F平面図(実施設計)", rev: "Rev.2", status: "提出承認済" },
+  "S-101":    { tile: "kouzou-101", title: "1F 伏図",           rev: "Rev.A", status: "提出承認済" },
+  "M-101":    { tile: "setsubi-101",title: "1F 空調設備図",      rev: "Rev.A", status: "作業中" },
 };
 const ls = {
   get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
@@ -53,15 +60,16 @@ export async function resolveDrawing(no, rev) {
     if (vs.length) {
       const e = (rev && vs.find((x) => x.rev === rev)) || vs.find(isCurrent) || vs[vs.length - 1];
       return { mode: "demo", no: e.no, title: e.title, rev: e.rev, status: e.status,
-        baseTile: tileSrc(e.tileId, e.width, e.height), overlay: null, versionId: null, isOld: e.status === "旧版" };
+        baseTile: tileSrc(e.tileId, e.width, e.height), layers: [], versionId: null, isOld: e.status === "旧版" };
     }
     const key = DEMO[no] ? no : "A-101";
     const d = DEMO[key];
+    const layers = (d.overlays || []).map((o) => ({
+      key: o.tile, tile: tileSrc(o.tile), label: o.label, color: o.color, linkId: null,
+    }));
     return {
       mode: "demo", no: key, title: d.title, rev: d.rev, status: d.status,
-      baseTile: d.tile ? tileSrc(d.tile) : null,
-      overlay: d.overlay ? { tile: tileSrc(d.overlay.tile), label: d.overlay.label, linkId: null, transform: null } : null,
-      versionId: null,
+      baseTile: d.tile ? tileSrc(d.tile) : null, layers, versionId: null,
     };
   }
   // ---- Supabase ----
@@ -72,17 +80,18 @@ export async function resolveDrawing(no, rev) {
   const d = drawings.find((x) => x.drawing_no === no) || drawings.find((x) => x.type === "施工図") || drawings[0];
   const ver = await db.getVersion(d.current_version_id);
   const baseKey = await db.getTilesKey(ver.id);
-  let overlay = null;
+  const COLORS = ["#3a86ff", "#2f9e5b", "#d9822b", "#8a5cd0"];
   const links = await db.listLinks(d.id);
-  const link = links.find((l) => l.relation === "根拠") || links[0];
-  if (link) {
+  const layers = [];
+  for (const [i, link] of links.entries()) {
     const od = byId[link.to_drawing_id];
     const ok = od?.current_version_id ? await db.getTilesKey(od.current_version_id) : null;
-    overlay = { tile: ok ? keyUrl(ok) : null, label: od ? `${od.drawing_no}（${od.type}）` : "", linkId: link.id, transform: link.overlay_transform };
+    if (!ok) continue;
+    layers.push({ key: link.id, tile: keyUrl(ok), label: od ? `${od.drawing_no}（${od.type}）` : "", color: COLORS[i % COLORS.length], linkId: link.id, transform: link.overlay_transform });
   }
   return {
     mode: "db", no: d.drawing_no, title: d.title, rev: ver.rev, status: ver.status,
-    baseTile: baseKey ? keyUrl(baseKey) : null, overlay, versionId: ver.id,
+    baseTile: baseKey ? keyUrl(baseKey) : null, layers, versionId: ver.id,
   };
 }
 
@@ -121,20 +130,20 @@ export const markups = {
   },
 };
 
-// ============ 位置合わせ ============
+// ============ 位置合わせ（レイヤー単位） ============
 export const align = {
-  async get(ctx) {
-    if (!ctx.overlay) return null;
-    if (ctx.mode === "demo") return ls.get(`align:${ctx.no}`, null);
-    return ctx.overlay.transform || null;
+  async get(ctx, layer) {
+    if (!layer) return null;
+    if (ctx.mode === "demo") return ls.get(`align:${ctx.no}:${layer.key}`, null);
+    return layer.transform || null;
   },
-  async save(ctx, transform) {
-    if (ctx.mode === "demo") return ls.set(`align:${ctx.no}`, transform);
-    if (ctx.overlay?.linkId) await db.saveOverlayTransform(ctx.overlay.linkId, transform);
+  async save(ctx, layer, transform) {
+    if (ctx.mode === "demo") return ls.set(`align:${ctx.no}:${layer.key}`, transform);
+    if (layer?.linkId) await db.saveOverlayTransform(layer.linkId, transform);
   },
-  async reset(ctx) {
-    if (ctx.mode === "demo") return ls.del(`align:${ctx.no}`);
-    if (ctx.overlay?.linkId) await db.saveOverlayTransform(ctx.overlay.linkId, null);
+  async reset(ctx, layer) {
+    if (ctx.mode === "demo") return ls.del(`align:${ctx.no}:${layer.key}`);
+    if (layer?.linkId) await db.saveOverlayTransform(layer.linkId, null);
   },
 };
 

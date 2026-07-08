@@ -113,6 +113,19 @@
   .btn-primary { background: var(--green); border-color: var(--green); color: #06210f; font-weight: 600; }
   .btn-danger { background: rgba(224,72,61,.16); border-color: rgba(224,72,61,.5); color: #f0857c; }
 
+  /* ---- Layers panel ---- */
+  .layers-panel { position: absolute; top: 14px; left: 14px; z-index: 15; background: rgba(22,27,34,.94); border: 1px solid var(--line); border-radius: 10px; padding: 8px; min-width: 190px; box-shadow: 0 6px 24px rgba(0,0,0,.4); backdrop-filter: blur(3px); }
+  .lp-title { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); padding: 2px 6px 6px; }
+  .lp-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .lp-row:hover { background: var(--surface-2); }
+  .lp-row.active { background: rgba(70,179,161,.14); outline: 1px solid var(--accent); }
+  .lp-row.base { cursor: default; opacity: .9; }
+  .lp-row.base:hover { background: transparent; }
+  .lp-sw { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .lp-name { flex: 1; white-space: nowrap; }
+  .lp-eye { background: transparent; border: none; padding: 2px 4px; font-size: 13px; cursor: pointer; filter: grayscale(0); }
+  .lp-eye.off { opacity: .35; }
+
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -131,7 +144,7 @@
     <button id="approve" class="btn-accent">承認フロー</button>
   </header>
   <div id="stage">
-    <div id="viewer"><div id="hint"></div></div>
+    <div id="viewer"><div id="hint"></div><div id="layers" class="layers-panel"></div></div>
     <div id="panel">
       <div class="panel-head">
         <div><span class="panel-title">赤入れ</span><span id="counts" class="counts"></span></div>
@@ -182,16 +195,19 @@ const escapeHtml = (s) => (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "
 
 const SP = new URLSearchParams(location.search);
 const PARAM = SP.get("drawing"), REV = SP.get("rev");
-const INITIAL_OV = { x: 0.045, y: 0.02, width: 0.9 };   // 設計図の初期ズレ(自動/手動合わせで解消)
-let ctx, viewer, baseItem = null, overlayItem = null;
+const ovInit = (i) => ({ x: 0.03 + 0.018 * i, y: 0.014 + 0.011 * i, width: 0.93 });  // レイヤーごとの初期ズレ
+let ctx, viewer, baseItem = null;
+let layers = [], activeIdx = 0;          // 各: {def, item, visible}
 let mks = [], mkMode = false;
+const AItem = () => layers[activeIdx]?.item;
+const ADef = () => ctx.layers[activeIdx];
 
 async function boot() {
   ctx = await resolveDrawing(PARAM, REV);
   $("dno").textContent = ctx.no;
   $("dtitle").textContent = ctx.title;
-  $("status").textContent = ctx.overlay ? "根拠図面: " + ctx.overlay.label : "根拠図面なし";
-  const v0 = Math.max(0, VSTATUS.indexOf(ctx.status));  // 版ステータスをバッジに反映
+  $("status").textContent = ctx.layers.length ? `根拠図面 ${ctx.layers.length}枚を重ね` : "根拠図面なし";
+  const v0 = Math.max(0, VSTATUS.indexOf(ctx.status));
   $("vstatus").className = "badge v" + v0; $("vstatus").textContent = VSTATUS[v0] || ctx.status;
   $("oldnote").style.display = ctx.isOld ? "inline" : "none";
   await populateVersions();
@@ -208,21 +224,54 @@ async function boot() {
   if (!ctx.baseTile) {
     const ph = $("hint");
     ph.style.display = "block"; ph.style.top = "50%"; ph.style.background = "rgba(60,60,70,.95)";
-    ph.textContent = `「${ctx.no} ${ctx.title}」はタイル未生成です（PoCでは A-101 と設計図のみ生成済み）`;
+    ph.textContent = `「${ctx.no} ${ctx.title}」はタイル未生成です`;
+    $("layers").style.display = "none";
     return;
   }
   viewer.addHandler("open", async () => {
     baseItem = viewer.world.getItemAt(0);
-    if (ctx.overlay?.tile) {
-      viewer.addTiledImage({
-        tileSource: ctx.overlay.tile, opacity: 0.5,
-        x: INITIAL_OV.x, y: INITIAL_OV.y, width: INITIAL_OV.width,
-        success: async (e) => { overlayItem = e.item; await applySavedAlign(); },
-      });
+    layers = [];
+    for (let i = 0; i < ctx.layers.length; i++) {
+      const init = ovInit(i);
+      const item = await addLayer(ctx.layers[i].tile, init);
+      layers.push({ def: ctx.layers[i], item, visible: true });
+      await applySavedAlign(i);
     }
+    renderLayersPanel(); applyOpacity();
     mks = await MK.list(ctx); renderPins(); renderList();
     viewer.addHandler("animation", renderPins);
   });
+}
+
+function addLayer(tileSource, init) {
+  return new Promise((res) => {
+    viewer.addTiledImage({ tileSource, opacity: layerOpacity(), x: init.x, y: init.y, width: init.width, success: (e) => res(e.item) });
+  });
+}
+function layerOpacity() { return $("toggle").checked ? Number($("opacity").value) : 0; }
+function applyOpacity() { layers.forEach((l) => l.item && l.item.setOpacity(l.visible ? layerOpacity() : 0)); }
+
+/* ===== レイヤーパネル ===== */
+function renderLayersPanel() {
+  const host = $("layers"); host.replaceChildren();
+  const title = document.createElement("div"); title.className = "lp-title"; title.textContent = "重ねる図面"; host.appendChild(title);
+  host.appendChild(layerRow("#e0483d", ctx.title + "（基準）", null));
+  ctx.layers.forEach((def, i) => host.appendChild(layerRow(def.color, def.label, i)));
+}
+function layerRow(color, label, i) {
+  const row = document.createElement("div");
+  row.className = "lp-row" + (i === null ? " base" : (i === activeIdx ? " active" : ""));
+  const sw = document.createElement("span"); sw.className = "lp-sw"; sw.style.background = color;
+  const nm = document.createElement("span"); nm.className = "lp-name"; nm.textContent = label;
+  row.append(sw, nm);
+  if (i !== null) {
+    const eye = document.createElement("button"); eye.className = "lp-eye" + (layers[i].visible ? "" : " off");
+    eye.textContent = layers[i].visible ? "👁" : "🚫";
+    eye.onclick = (e) => { e.stopPropagation(); layers[i].visible = !layers[i].visible; applyOpacity(); renderLayersPanel(); };
+    row.appendChild(eye);
+    row.onclick = () => { activeIdx = i; renderLayersPanel(); $("status").textContent = `選択中: ${ctx.layers[i].label}`; };
+  }
+  return row;
 }
 
 /* ===== 版切替 ===== */
@@ -243,11 +292,8 @@ async function populateVersions() {
 /* ===== コントロール ===== */
 function wireControls() {
   const op = $("opacity"), toggle = $("toggle");
-  op.addEventListener("input", () => {
-    $("opv").textContent = Math.round(op.value * 100) + "%";
-    if (overlayItem && toggle.checked) overlayItem.setOpacity(Number(op.value));
-  });
-  toggle.addEventListener("change", () => { if (overlayItem) overlayItem.setOpacity(toggle.checked ? Number(op.value) : 0); });
+  op.addEventListener("input", () => { $("opv").textContent = Math.round(op.value * 100) + "%"; applyOpacity(); });
+  toggle.addEventListener("change", applyOpacity);
 
   $("markup").addEventListener("click", () => {
     mkMode = !mkMode; $("markup").classList.toggle("active", mkMode);
@@ -265,28 +311,28 @@ function wireControls() {
       if (mkMode) $("markup").click();
       if (alignMode) { clearMarkers(); endAlign(); }
       op.value = 0.6; op.dispatchEvent(new Event("input"));
-      showHint("設計図(青)をドラッグで移動 ／ ＋－で拡大縮小 ／ 矢印キーで微調整");
+      showHint(`「${ADef()?.label || "選択中の図面"}」をドラッグで移動 ／ ＋－で拡縮 ／ 矢印キーで微調整`);
     } else hideHint();
   });
   $("autoAlign").addEventListener("click", autoAlign);
   $("scaleUp").addEventListener("click", () => scaleOverlay(1.02));
   $("scaleDown").addEventListener("click", () => scaleOverlay(1 / 1.02));
   viewer.addHandler("canvas-drag", (e) => {
-    if (!adjustMode || !overlayItem) return;
+    const it = AItem(); if (!adjustMode || !it) return;
     e.preventDefaultAction = true;
     const d = viewer.viewport.deltaPointsFromPixels(new OpenSeadragon.Point(e.delta.x, e.delta.y));
-    const b = overlayItem.getBounds();
-    overlayItem.setPosition(new OpenSeadragon.Point(b.x + d.x, b.y + d.y), true);
+    const b = it.getBounds();
+    it.setPosition(new OpenSeadragon.Point(b.x + d.x, b.y + d.y), true);
   });
-  viewer.addHandler("canvas-drag-end", () => { if (adjustMode && overlayItem) saveOverlay(); });
+  viewer.addHandler("canvas-drag-end", () => { if (adjustMode && AItem()) saveOverlay(); });
   document.addEventListener("keydown", (e) => {
-    if (!adjustMode || !overlayItem) return;
+    const it = AItem(); if (!adjustMode || !it) return;
     const step = 0.004; let dx = 0, dy = 0;
     if (e.key === "ArrowLeft") dx = -step; else if (e.key === "ArrowRight") dx = step;
     else if (e.key === "ArrowUp") dy = -step; else if (e.key === "ArrowDown") dy = step; else return;
     e.preventDefault();
-    const b = overlayItem.getBounds();
-    overlayItem.setPosition(new OpenSeadragon.Point(b.x + dx, b.y + dy), true); saveOverlay();
+    const b = it.getBounds();
+    it.setPosition(new OpenSeadragon.Point(b.x + dx, b.y + dy), true); saveOverlay();
   });
 
   $("approve").addEventListener("click", openApproval);
@@ -344,33 +390,34 @@ function focusMarkup(id) {
 /* ===== 2点位置合わせ ===== */
 let alignMode = false, adjustMode = false, clicks = [], markers = [];
 function scaleOverlay(f) {
-  if (!overlayItem) return;
-  const b = overlayItem.getBounds();
+  const it = AItem(); if (!it) return;
+  const b = it.getBounds();
   const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
-  overlayItem.setWidth(b.width * f, true);
-  const nb = overlayItem.getBounds();
-  overlayItem.setPosition(new OpenSeadragon.Point(cx - nb.width / 2, cy - nb.height / 2), true);
+  it.setWidth(b.width * f, true);
+  const nb = it.getBounds();
+  it.setPosition(new OpenSeadragon.Point(cx - nb.width / 2, cy - nb.height / 2), true);
   saveOverlay();
 }
 function saveOverlay() {
-  const b = overlayItem.getBounds();
-  AL.save(ctx, { x: b.x, y: b.y, width: b.width, scale: b.width });
-  $("status").textContent = `位置調整済 (scale=${b.width.toFixed(3)})`;
+  const it = AItem(); if (!it) return;
+  const b = it.getBounds();
+  AL.save(ctx, ADef(), { x: b.x, y: b.y, width: b.width, scale: b.width });
+  $("status").textContent = `「${ADef().label}」位置調整済`;
 }
 const STEPS = [
-  "① 施工図(下)の特徴点をクリック 〔赤〕",
-  "② ①と同じ場所を 設計図 上でクリック 〔青〕",
-  "③ 施工図(下)の別の特徴点をクリック 〔赤〕",
-  "④ ③と同じ場所を 設計図 上でクリック 〔青〕",
+  "① 施工図(赤)の特徴点をクリック",
+  "② ①と同じ場所を 根拠図面 上でクリック",
+  "③ 施工図(赤)の別の特徴点をクリック",
+  "④ ③と同じ場所を 根拠図面 上でクリック",
 ];
 function startAlign() {
-  if (!overlayItem) return;
+  if (!AItem()) return;
   if (mkMode) $("markup").click();
   alignMode = true; clicks = []; clearMarkers();
   $("align").classList.add("active"); $("align").textContent = "位置合わせ中… (Esc中止)";
   const op = $("opacity"); op.value = 0.55; op.dispatchEvent(new Event("input")); showHint(STEPS[0]);
 }
-function endAlign() { alignMode = false; $("align").classList.remove("active"); $("align").textContent = "🎯 位置合わせ"; hideHint(); }
+function endAlign() { alignMode = false; $("align").classList.remove("active"); $("align").textContent = "2点合わせ"; hideHint(); }
 const hint = () => $("hint");
 function showHint(t) { hint().textContent = t; hint().style.display = t ? "block" : "none"; }
 function hideHint() { hint().style.display = "none"; }
@@ -392,47 +439,49 @@ function onCanvasClick(e) {
   }
 }
 async function computeAndApply() {
+  const it = AItem(); if (!it) return;
   const [P1, Q1, P2, Q2] = clicks;
   const dP = Math.hypot(P2.x - P1.x, P2.y - P1.y), dQ = Math.hypot(Q2.x - Q1.x, Q2.y - Q1.y);
   const s = dQ > 1e-9 ? dP / dQ : 1;
-  const b = overlayItem.getBounds();
+  const b = it.getBounds();
   const nx = P1.x + s * (b.x - Q1.x), ny = P1.y + s * (b.y - Q1.y), nw = s * b.width;
-  overlayItem.setPosition(new OpenSeadragon.Point(nx, ny), true); overlayItem.setWidth(nw, true);
-  await AL.save(ctx, { x: nx, y: ny, width: nw, scale: s });
-  $("status").textContent = `位置合わせ済 (scale=${s.toFixed(3)})`;
+  it.setPosition(new OpenSeadragon.Point(nx, ny), true); it.setWidth(nw, true);
+  await AL.save(ctx, ADef(), { x: nx, y: ny, width: nw, scale: s });
+  $("status").textContent = `「${ADef().label}」位置合わせ済`;
   setTimeout(clearMarkers, 1200);
 }
-async function applySavedAlign() {
-  const t = await AL.get(ctx); if (!t) return;
-  overlayItem.setPosition(new OpenSeadragon.Point(t.x, t.y), true); overlayItem.setWidth(t.width, true);
-  $("status").textContent = `位置合わせ復元済 (scale=${(t.scale || 1).toFixed(3)})`;
+async function applySavedAlign(i) {
+  const t = await AL.get(ctx, ctx.layers[i]); if (!t) return;
+  const it = layers[i]?.item; if (!it) return;
+  it.setPosition(new OpenSeadragon.Point(t.x, t.y), true); it.setWidth(t.width, true);
 }
 async function resetAlign() {
-  await AL.reset(ctx);
-  if (overlayItem) { overlayItem.setPosition(new OpenSeadragon.Point(INITIAL_OV.x, INITIAL_OV.y), true); overlayItem.setWidth(INITIAL_OV.width, true); }
-  clearMarkers(); $("status").textContent = "ズレた状態に戻しました";
+  const it = AItem(); if (!it) return;
+  await AL.reset(ctx, ADef());
+  const init = ovInit(activeIdx);
+  it.setPosition(new OpenSeadragon.Point(init.x, init.y), true); it.setWidth(init.width, true);
+  clearMarkers(); $("status").textContent = `「${ADef().label}」をズレた状態に戻しました`;
 }
 
-/* ===== 自動合わせ（画像解析で設計図の輪郭を施工図にフィット） ===== */
+/* ===== 自動合わせ（画像解析で選択中レイヤーの輪郭を施工図にフィット） ===== */
 async function autoAlign() {
-  if (!overlayItem || !ctx.overlay?.tile) return;
-  showHint("自動解析中…");
+  const it = AItem(); if (!it || !ADef()?.tile) return;
+  showHint(`「${ADef().label}」を自動解析中…`);
   try {
-    const bI = ctx.baseTile.Image, oI = ctx.overlay.tile.Image;
-    const lv = (im) => Math.max(0, Math.ceil(Math.log2(Math.max(im.Size.Width, im.Size.Height))) - 4); // 全体が1タイルに収まるレベル
+    const bI = ctx.baseTile.Image, oI = ADef().tile.Image;
+    const lv = (im) => Math.max(0, Math.ceil(Math.log2(Math.max(im.Size.Width, im.Size.Height))) - 4);
     const [bb, ob] = await Promise.all([
       contentBBox(`${bI.Url}${lv(bI)}/0_0.${bI.Format}`),
       contentBBox(`${oI.Url}${lv(oI)}/0_0.${oI.Format}`),
     ]);
     if (!bb || !ob) { showHint("自動解析に失敗（手動でどうぞ）"); setTimeout(hideHint, 1500); return; }
     const baseH = baseItem.getBounds().height;
-    const Wd = (bb.x1 - bb.x0) / (ob.x1 - ob.x0);          // 輪郭幅比＝拡大率
-    const X = bb.x0 - ob.x0 * Wd;
-    const Y = baseH * (bb.y0 - ob.y0 * Wd);
-    overlayItem.setWidth(Wd, true);
-    overlayItem.setPosition(new OpenSeadragon.Point(X, Y), true);
+    const Wd = (bb.x1 - bb.x0) / (ob.x1 - ob.x0);
+    const X = bb.x0 - ob.x0 * Wd, Y = baseH * (bb.y0 - ob.y0 * Wd);
+    it.setWidth(Wd, true);
+    it.setPosition(new OpenSeadragon.Point(X, Y), true);
     saveOverlay();
-    $("status").textContent = "✨ 自動で位置合わせしました";
+    $("status").textContent = `✨「${ADef().label}」を自動合わせしました`;
     hideHint();
   } catch (e) { showHint("自動解析に失敗: " + e.message); setTimeout(hideHint, 1500); }
 }
