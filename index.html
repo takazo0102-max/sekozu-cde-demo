@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>施工図CDE - 突合ビュー</title>
 <script src="https://cdn.jsdelivr.net/npm/openseadragon@4.1.0/build/openseadragon/openseadragon.min.js"></script>
-<script src="/config.js"></script>
+<script src="./config.js"></script>
 <style>
   :root {
     --bg: #0f1319; --surface: #161b22; --surface-2: #1d232c; --raised: #232a34;
@@ -135,7 +135,7 @@
 </head>
 <body>
   <header>
-    <a class="back" href="/home.html">← 図面一覧</a>
+    <a class="back" href="./home.html">← 図面一覧</a>
     <span class="divider"></span>
     <span class="dno" id="dno">A-101</span>
     <span class="dtitle" id="dtitle">1F平面詳細図</span>
@@ -191,7 +191,7 @@
   </div>
 
 <script type="module">
-import { STATUS, ROLES, resolveDrawing, listVersions, markups as MK, align as AL, approval as AP } from "/data.js";
+import { STATUS, ROLES, resolveDrawing, listVersions, markups as MK, align as AL, approval as AP } from "./data.js";
 
 const $ = (id) => document.getElementById(id);
 const VSTATUS = ["作業中", "社内確認", "提出承認済"];
@@ -317,7 +317,7 @@ async function populateVersions() {
     if (v.rev === ctx.rev) o.selected = true;
     sel.appendChild(o);
   });
-  sel.onchange = () => { location.href = `/index.html?drawing=${encodeURIComponent(ctx.no)}&rev=${encodeURIComponent(sel.value)}`; };
+  sel.onchange = () => { location.href = `index.html?drawing=${encodeURIComponent(ctx.no)}&rev=${encodeURIComponent(sel.value)}`; };
 }
 
 /* ===== コントロール ===== */

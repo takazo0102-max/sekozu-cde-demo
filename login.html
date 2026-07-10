@@ -48,18 +48,18 @@ if (!db.enabled) {
   note.innerHTML = "⚠ Supabase未設定（config.js）。今は<b>デモモード</b>で認証なしでも進めます。";
   const b = document.createElement("button");
   b.textContent = "デモとして図面一覧へ →"; b.className = "primary"; b.style.marginTop = "14px"; b.style.width = "100%";
-  b.onclick = () => (location.href = "home.html");
+  b.onclick = () => (location.href = "./home.html");
   document.querySelector(".card").appendChild(b);
 } else {
   // 既にログイン済みなら飛ばす
-  auth.user().then((u) => { if (u) location.href = "home.html"; });
+  auth.user().then((u) => { if (u) location.href = "./home.html"; });
 }
 
 document.getElementById("signin").onclick = async () => {
   show("ログイン中…");
   const { error } = await auth.signIn(email.value.trim(), pw.value);
   if (error) return show(error.message, "err");
-  location.href = "home.html";
+  location.href = "./home.html";
 };
 document.getElementById("signup").onclick = async () => {
   show("登録中…");

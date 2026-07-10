@@ -38,7 +38,7 @@
   <header>
     <span><b>施工図CDE</b> 図面一覧</span>
     <span class="sp"></span>
-    
+    <button id="uploadBtn">＋ 図面アップロード</button>
     <span class="who" id="who"></span>
     <button id="logout" style="display:none">ログアウト</button>
   </header>
@@ -102,11 +102,11 @@ async function boot() {
     return;
   }
   const user = await auth.user();
-  if (!user) return (location.href = "login.html");
+  if (!user) return (location.href = "./login.html");
   document.getElementById("who").textContent = user.email;
   const lo = document.getElementById("logout");
   lo.style.display = "inline-block";
-  lo.onclick = async () => { await auth.signOut(); location.href = "login.html"; };
+  lo.onclick = async () => { await auth.signOut(); location.href = "./login.html"; };
 
   const projects = await db.listProjects();
   fillProjects(projects);
@@ -180,7 +180,7 @@ async function reloadList() {
 
 // ---- アップロードモーダル ----
 const modal = document.getElementById("modal");
-const _ub=document.getElementById("uploadBtn"); if(_ub)_ub.onclick=()=>(modal.style.display="flex");
+document.getElementById("uploadBtn").onclick = () => (modal.style.display = "flex");
 document.getElementById("u_close").onclick = () => (modal.style.display = "none");
 modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
 
