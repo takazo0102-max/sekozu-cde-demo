@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>施工図CDE - 突合ビュー</title>
 <script src="https://cdn.jsdelivr.net/npm/openseadragon@4.1.0/build/openseadragon/openseadragon.min.js"></script>
-<script src="./config.js"></script>
+<script src="/config.js"></script>
 <style>
   :root {
     --bg: #0f1319; --surface: #161b22; --surface-2: #1d232c; --raised: #232a34;
@@ -116,22 +116,26 @@
   /* ---- Layers panel ---- */
   .layers-panel { position: absolute; top: 14px; left: 14px; z-index: 15; background: rgba(22,27,34,.94); border: 1px solid var(--line); border-radius: 10px; padding: 8px; min-width: 190px; box-shadow: 0 6px 24px rgba(0,0,0,.4); backdrop-filter: blur(3px); }
   .lp-title { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); padding: 2px 6px 6px; }
-  .lp-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .lp-row { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
   .lp-row:hover { background: var(--surface-2); }
   .lp-row.active { background: rgba(70,179,161,.14); outline: 1px solid var(--accent); }
   .lp-row.base { cursor: default; opacity: .9; }
   .lp-row.base:hover { background: transparent; }
+  .lp-head { display: flex; align-items: center; gap: 8px; }
   .lp-sw { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
   .lp-name { flex: 1; white-space: nowrap; }
+  .lp-op { width: 30px; text-align: right; font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; }
   .lp-eye { background: transparent; border: none; padding: 2px 4px; font-size: 13px; cursor: pointer; filter: grayscale(0); }
   .lp-eye.off { opacity: .35; }
+  .lp-rng { width: 100%; height: 3px; accent-color: var(--accent); cursor: pointer; }
+  .lp-rng:disabled { opacity: .3; cursor: default; }
 
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
   <header>
-    <a class="back" href="home.html">← 図面一覧</a>
+    <a class="back" href="/home.html">← 図面一覧</a>
     <span class="divider"></span>
     <span class="dno" id="dno">A-101</span>
     <span class="dtitle" id="dtitle">1F平面詳細図</span>
@@ -158,7 +162,7 @@
       <span class="grp-label">重ね合わせ</span>
       <span class="legend"><span class="sw sw-r"></span>施工図<span class="sw sw-b"></span>設計図</span>
       <label class="chk"><input id="toggle" type="checkbox" checked /> 重ねる</label>
-      <label class="rng">透明度 <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.5" /><span id="opv">50%</span></label>
+      <label class="rng">透明度<small>(選択中)</small> <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.5" /><span id="opv">50%</span></label>
     </div>
     <span class="divider"></span>
     <div class="grp">
@@ -187,7 +191,7 @@
   </div>
 
 <script type="module">
-import { STATUS, ROLES, resolveDrawing, listVersions, markups as MK, align as AL, approval as AP } from "./data.js";
+import { STATUS, ROLES, resolveDrawing, listVersions, markups as MK, align as AL, approval as AP } from "/data.js";
 
 const $ = (id) => document.getElementById(id);
 const VSTATUS = ["作業中", "社内確認", "提出承認済"];
@@ -234,7 +238,7 @@ async function boot() {
     for (let i = 0; i < ctx.layers.length; i++) {
       const init = ovInit(i);
       const item = await addLayer(ctx.layers[i].tile, init);
-      layers.push({ def: ctx.layers[i], item, visible: true });
+      layers.push({ def: ctx.layers[i], item, visible: true, op: 0.5 });
       await applySavedAlign(i);
     }
     renderLayersPanel(); applyOpacity();
@@ -245,11 +249,20 @@ async function boot() {
 
 function addLayer(tileSource, init) {
   return new Promise((res) => {
-    viewer.addTiledImage({ tileSource, opacity: layerOpacity(), x: init.x, y: init.y, width: init.width, success: (e) => res(e.item) });
+    viewer.addTiledImage({ tileSource, opacity: 0, x: init.x, y: init.y, width: init.width, success: (e) => res(e.item) });
   });
 }
-function layerOpacity() { return $("toggle").checked ? Number($("opacity").value) : 0; }
-function applyOpacity() { layers.forEach((l) => l.item && l.item.setOpacity(l.visible ? layerOpacity() : 0)); }
+// 重ねON時、各レイヤーは自分の透明度(op)で表示。非表示レイヤーは0
+function applyOpacity() {
+  const on = $("toggle").checked;
+  layers.forEach((l) => l.item && l.item.setOpacity(on && l.visible ? l.op : 0));
+}
+// ツールバーの大スライダー＝選択中レイヤーの透明度を反映
+function syncGlobalOpacity() {
+  const l = layers[activeIdx], op = $("opacity");
+  if (!l) return;
+  op.value = l.op; $("opv").textContent = Math.round(l.op * 100) + "%";
+}
 
 /* ===== レイヤーパネル ===== */
 function renderLayersPanel() {
@@ -261,16 +274,34 @@ function renderLayersPanel() {
 function layerRow(color, label, i) {
   const row = document.createElement("div");
   row.className = "lp-row" + (i === null ? " base" : (i === activeIdx ? " active" : ""));
+  const head = document.createElement("div"); head.className = "lp-head";
   const sw = document.createElement("span"); sw.className = "lp-sw"; sw.style.background = color;
   const nm = document.createElement("span"); nm.className = "lp-name"; nm.textContent = label;
-  row.append(sw, nm);
-  if (i !== null) {
-    const eye = document.createElement("button"); eye.className = "lp-eye" + (layers[i].visible ? "" : " off");
-    eye.textContent = layers[i].visible ? "👁" : "🚫";
-    eye.onclick = (e) => { e.stopPropagation(); layers[i].visible = !layers[i].visible; applyOpacity(); renderLayersPanel(); };
-    row.appendChild(eye);
-    row.onclick = () => { activeIdx = i; renderLayersPanel(); $("status").textContent = `選択中: ${ctx.layers[i].label}`; };
-  }
+  head.append(sw, nm);
+  if (i === null) { row.appendChild(head); return row; }
+
+  const pct = document.createElement("span"); pct.className = "lp-op"; pct.textContent = Math.round(layers[i].op * 100) + "%";
+  const eye = document.createElement("button"); eye.className = "lp-eye" + (layers[i].visible ? "" : " off");
+  eye.textContent = layers[i].visible ? "👁" : "🚫";
+  eye.onclick = (e) => { e.stopPropagation(); layers[i].visible = !layers[i].visible; applyOpacity(); renderLayersPanel(); };
+  head.append(pct, eye);
+  row.appendChild(head);
+
+  // 図面ごとの透明度スライダー
+  const rng = document.createElement("input");
+  rng.type = "range"; rng.min = 0; rng.max = 1; rng.step = 0.05; rng.value = layers[i].op;
+  rng.className = "lp-rng"; rng.disabled = !layers[i].visible;
+  rng.onclick = (e) => e.stopPropagation();
+  rng.oninput = (e) => {
+    e.stopPropagation();
+    layers[i].op = Number(rng.value);
+    pct.textContent = Math.round(layers[i].op * 100) + "%";
+    applyOpacity();
+    if (i === activeIdx) syncGlobalOpacity();
+  };
+  row.appendChild(rng);
+
+  row.onclick = () => { activeIdx = i; renderLayersPanel(); syncGlobalOpacity(); $("status").textContent = `選択中: ${ctx.layers[i].label}`; };
   return row;
 }
 
@@ -286,14 +317,19 @@ async function populateVersions() {
     if (v.rev === ctx.rev) o.selected = true;
     sel.appendChild(o);
   });
-  sel.onchange = () => { location.href = `index.html?drawing=${encodeURIComponent(ctx.no)}&rev=${encodeURIComponent(sel.value)}`; };
+  sel.onchange = () => { location.href = `/index.html?drawing=${encodeURIComponent(ctx.no)}&rev=${encodeURIComponent(sel.value)}`; };
 }
 
 /* ===== コントロール ===== */
 function wireControls() {
   const op = $("opacity"), toggle = $("toggle");
-  op.addEventListener("input", () => { $("opv").textContent = Math.round(op.value * 100) + "%"; applyOpacity(); });
-  toggle.addEventListener("change", applyOpacity);
+  // 大スライダーは選択中レイヤーの透明度を操作（パネルの行スライダーと同期）
+  op.addEventListener("input", () => {
+    $("opv").textContent = Math.round(op.value * 100) + "%";
+    const l = layers[activeIdx];
+    if (l) { l.op = Number(op.value); applyOpacity(); renderLayersPanel(); }
+  });
+  toggle.addEventListener("change", () => { applyOpacity(); renderLayersPanel(); });
 
   $("markup").addEventListener("click", () => {
     mkMode = !mkMode; $("markup").classList.toggle("active", mkMode);
